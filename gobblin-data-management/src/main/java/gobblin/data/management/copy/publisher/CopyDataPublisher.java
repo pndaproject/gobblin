@@ -28,13 +28,12 @@ import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
 
-import lombok.extern.slf4j.Slf4j;
-
 import gobblin.commit.CommitStep;
 import gobblin.configuration.ConfigurationKeys;
 import gobblin.configuration.State;
 import gobblin.configuration.WorkUnitState;
 import gobblin.configuration.WorkUnitState.WorkingState;
+import gobblin.data.management.copy.CopyEntity;
 import gobblin.data.management.copy.CopySource;
 import gobblin.data.management.copy.CopyableDataset;
 import gobblin.data.management.copy.CopyableDatasetMetadata;
@@ -44,15 +43,16 @@ import gobblin.data.management.copy.entities.PostPublishStep;
 import gobblin.data.management.copy.entities.PrePublishStep;
 import gobblin.data.management.copy.recovery.RecoveryHelper;
 import gobblin.data.management.copy.writer.FileAwareInputStreamDataWriter;
-import gobblin.data.management.copy.CopyEntity;
 import gobblin.data.management.copy.writer.FileAwareInputStreamDataWriterBuilder;
-import gobblin.publisher.UnpublishedHandling;
 import gobblin.instrumented.Instrumented;
 import gobblin.metrics.GobblinMetrics;
 import gobblin.metrics.MetricContext;
 import gobblin.metrics.event.EventSubmitter;
 import gobblin.publisher.DataPublisher;
+import gobblin.publisher.UnpublishedHandling;
 import gobblin.util.HadoopUtils;
+
+import lombok.extern.slf4j.Slf4j;
 
 
 /**
@@ -174,8 +174,12 @@ public class CopyDataPublisher extends DataPublisher implements UnpublishedHandl
         prePublish.size(), postPublish.size()));
 
     executeCommitSequence(prePublish);
-    // Targets are always absolute, so we start moving from root (will skip any existing directories).
-    HadoopUtils.renameRecursively(this.fs, datasetWriterOutputPath, new Path("/"));
+    if (hasCopyableFiles(datasetWorkUnitStates)) {
+      // Targets are always absolute, so we start moving from root (will skip any existing directories).
+      HadoopUtils.renameRecursively(this.fs, datasetWriterOutputPath, new Path("/"));
+    } else {
+      log.info(String.format("[%s] No copyable files in dataset. Proceeding to postpublish steps.", datasetAndPartition.identifier()));
+    }
     executeCommitSequence(postPublish);
 
     this.fs.delete(datasetWriterOutputPath, true);
@@ -202,8 +206,26 @@ public class CopyDataPublisher extends DataPublisher implements UnpublishedHandl
       }
     }
 
+    // if there are no valid values for datasetOriginTimestamp and datasetUpstreamTimestamp, use
+    // something more readable
+    if (Long.MAX_VALUE == datasetOriginTimestamp) {
+      datasetOriginTimestamp = 0;
+    }
+    if (Long.MAX_VALUE == datasetUpstreamTimestamp) {
+      datasetUpstreamTimestamp = 0;
+    }
+
     CopyEventSubmitterHelper.submitSuccessfulDatasetPublish(this.eventSubmitter, datasetAndPartition,
         Long.toString(datasetOriginTimestamp), Long.toString(datasetUpstreamTimestamp));
+  }
+
+  private static boolean hasCopyableFiles(Collection<WorkUnitState> workUnits) throws IOException {
+    for (WorkUnitState wus : workUnits) {
+      if (CopyableFile.class.isAssignableFrom(CopySource.getCopyEntityClass(wus))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static List<CommitStep> getCommitSequence(Collection<WorkUnitState> workUnits, Class<?> baseClass)

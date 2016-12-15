@@ -13,51 +13,55 @@
 package gobblin.data.management.retention.dataset;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
-import java.util.Set;
 
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.Singular;
 
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
 import org.slf4j.Logger;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 
 import gobblin.data.management.policy.EmbeddedRetentionSelectionPolicy;
+import gobblin.data.management.policy.SelectNothingPolicy;
 import gobblin.data.management.policy.VersionSelectionPolicy;
+import gobblin.data.management.retention.action.RetentionAction;
 import gobblin.data.management.retention.policy.RetentionPolicy;
 import gobblin.data.management.trash.ProxiedTrash;
-import gobblin.data.management.trash.TrashFactory;
+import gobblin.data.management.version.DatasetVersion;
 import gobblin.data.management.version.FileSystemDatasetVersion;
 import gobblin.data.management.version.finder.VersionFinder;
 import gobblin.dataset.FileSystemDataset;
 import gobblin.util.ConfigUtils;
-import gobblin.util.PathUtils;
 
 
 /**
- * {@link MultiVersionCleanableDatasetBase#getVersionFindersAndPolicies()}
- * Implementation of a {@link CleanableDataset} that may have several types of version and selctionPolicies.
+ *  A {@link CleanableDataset} that may have multiple {@link VersionFinder}, {@link VersionSelectionPolicy}
+ *  and {@link RetentionAction}s. Retention needs to performed for different kinds of {@link DatasetVersion}s. Each
+ *  kind of {@link DatasetVersion} can have its own {@link VersionSelectionPolicy} and/or {@link RetentionAction}
+ *  associated with it.
  * <ul>
  * <li>{@link MultiVersionCleanableDatasetBase#getVersionFindersAndPolicies()} gets a list {@link VersionFinderAndPolicy}s
- * <li>Each {@link VersionFinderAndPolicy} contains a {@link VersionFinder} and a {@link VersionSelectionPolicy}.
- * <li>The {@link MultiVersionCleanableDatasetBase#clean()} method finds all the {@link FileSystemDatasetVersion}s for a
- * {@link VersionFinderAndPolicy#versionFinder} and gets the deletable {@link FileSystemDatasetVersion}s by applying
- * {@link VersionFinderAndPolicy#versionSelectionPolicy}. These deletable version are deleted  and then deletes empty parent directories.
+ * <li>Each {@link VersionFinderAndPolicy} contains a {@link VersionFinder} and a {@link VersionSelectionPolicy}. It can
+ * optionally have a {@link RetentionAction}
+ * <li>The {@link MultiVersionCleanableDatasetBase#clean()} method finds all the {@link FileSystemDatasetVersion}s using
+ * {@link VersionFinderAndPolicy#versionFinder}
+ * <li> It gets the deletable {@link FileSystemDatasetVersion}s by applying {@link VersionFinderAndPolicy#versionSelectionPolicy}.
+ * These deletable version are deleted  and then deletes empty parent directories.
+ * <li>If additional retention actions are available at {@link VersionFinderAndPolicy#getRetentionActions()}, all versions
+ * found by the {@link VersionFinderAndPolicy#versionFinder} are passed to {@link RetentionAction#execute(List)} for
+ * each {@link RetentionAction}
  * </ul>
- * For each different types of versions with uses a
- * {@link gobblin.data.management.retention.version.finder.VersionFinder} to find dataset versions, a
- * {@link gobblin.data.management.retention.policy.RetentionPolicy} to figure out deletable versions,
  *
  * <p>
  *   Concrete subclasses should implement {@link #getVersionFindersAndPolicies()}
@@ -99,29 +103,79 @@ import gobblin.util.PathUtils;
 public abstract class MultiVersionCleanableDatasetBase<T extends FileSystemDatasetVersion>
     implements CleanableDataset, FileSystemDataset {
 
-  public static final String CONFIGURATION_KEY_PREFIX = "gobblin.retention.";
-  public static final String SIMULATE_KEY = CONFIGURATION_KEY_PREFIX + "simulate";
-  public static final String SIMULATE_DEFAULT = Boolean.toString(false);
-  public static final String SKIP_TRASH_KEY = CONFIGURATION_KEY_PREFIX + "skip.trash";
-  public static final String SKIP_TRASH_DEFAULT = Boolean.toString(false);
-  public static final String DELETE_EMPTY_DIRECTORIES_KEY = CONFIGURATION_KEY_PREFIX + "delete.empty.directories";
-  public static final String IS_DATASET_BLACKLISTED_KEY = CONFIGURATION_KEY_PREFIX + "dataset.is.blacklisted";
+  /**
+   * @deprecated in favor of {@link FsCleanableHelper}
+   */
+  @Deprecated
+  public static final String CONFIGURATION_KEY_PREFIX = FsCleanableHelper.CONFIGURATION_KEY_PREFIX;
 
-  public static final String DELETE_EMPTY_DIRECTORIES_DEFAULT = Boolean.toString(true);
-  public static final String DELETE_AS_OWNER_KEY = CONFIGURATION_KEY_PREFIX + "delete.as.owner";
-  public static final String DELETE_AS_OWNER_DEFAULT = Boolean.toString(true);
+  /**
+   * @deprecated in favor of {@link FsCleanableHelper}
+   */
+  @Deprecated
+  public static final String SIMULATE_KEY = FsCleanableHelper.SIMULATE_KEY;
+  public static final String SIMULATE_DEFAULT = FsCleanableHelper.SIMULATE_DEFAULT;
+
+  /**
+   * @deprecated in favor of {@link FsCleanableHelper}
+   */
+  @Deprecated
+  public static final String SKIP_TRASH_KEY = FsCleanableHelper.SKIP_TRASH_KEY;
+  public static final String SKIP_TRASH_DEFAULT = FsCleanableHelper.SKIP_TRASH_DEFAULT;
+
+  /**
+   * @deprecated in favor of {@link FsCleanableHelper}
+   */
+  @Deprecated
+  public static final String DELETE_EMPTY_DIRECTORIES_KEY = FsCleanableHelper.DELETE_EMPTY_DIRECTORIES_KEY;
+  public static final String DELETE_EMPTY_DIRECTORIES_DEFAULT = FsCleanableHelper.DELETE_EMPTY_DIRECTORIES_DEFAULT;
+
+  /**
+   * @deprecated in favor of {@link FsCleanableHelper}
+   */
+  @Deprecated
+  public static final String DELETE_AS_OWNER_KEY = FsCleanableHelper.DELETE_AS_OWNER_KEY;
+  public static final String DELETE_AS_OWNER_DEFAULT = FsCleanableHelper.DELETE_AS_OWNER_DEFAULT;
+
+  public static final String IS_DATASET_BLACKLISTED_KEY = CONFIGURATION_KEY_PREFIX + "dataset.is.blacklisted";
   public static final String IS_DATASET_BLACKLISTED_DEFAULT = Boolean.toString(false);
 
   protected final FileSystem fs;
+
+  /**
+   * @deprecated in favor of {@link FsCleanableHelper}
+   */
+  @Deprecated
   protected final ProxiedTrash trash;
-  protected final boolean simulate;
-  protected final boolean skipTrash;
-  protected final boolean deleteEmptyDirectories;
-  protected final boolean deleteAsOwner;
+
+  @Getter
+  @VisibleForTesting
   protected final boolean isDatasetBlacklisted;
+
+  private final FsCleanableHelper fsCleanableHelper;
 
   protected final Logger log;
 
+  /**
+   * @deprecated in favor of {@link FsCleanableHelper}
+   */
+  @Deprecated
+  protected final boolean simulate;
+  /**
+   * @deprecated in favor of {@link FsCleanableHelper}
+   */
+  @Deprecated
+  protected final boolean skipTrash;
+  /**
+   * @deprecated in favor of {@link FsCleanableHelper}
+   */
+  @Deprecated
+  protected final boolean deleteEmptyDirectories;
+  /**
+   * @deprecated in favor of {@link FsCleanableHelper}
+   */
+  @Deprecated
+  protected final boolean deleteAsOwner;
   /**
    * Get {@link gobblin.data.management.retention.policy.RetentionPolicy} to use.
    */
@@ -137,8 +191,11 @@ public abstract class MultiVersionCleanableDatasetBase<T extends FileSystemDatas
   }
 
   public MultiVersionCleanableDatasetBase(final FileSystem fs, final Properties props, Logger log) throws IOException {
-    this(fs, props, ConfigFactory
-        .parseMap(ImmutableMap.<String, String> of(IS_DATASET_BLACKLISTED_KEY, IS_DATASET_BLACKLISTED_DEFAULT)), log);
+    // This constructor is used by retention jobs configured through job configs and do not use dataset configs from config store.
+    // IS_DATASET_BLACKLISTED_KEY is only available with dataset config. Hence set IS_DATASET_BLACKLISTED_KEY to default
+    // ...false for jobs running with job configs
+    this(fs, props, ConfigFactory.parseMap(ImmutableMap.<String, String> of(IS_DATASET_BLACKLISTED_KEY,
+        IS_DATASET_BLACKLISTED_DEFAULT)), log);
   }
 
   /**
@@ -158,21 +215,15 @@ public abstract class MultiVersionCleanableDatasetBase<T extends FileSystemDatas
       boolean deleteEmptyDirectories, boolean deleteAsOwner, boolean isDatasetBlacklisted, Logger log)
       throws IOException {
     this.log = log;
+    this.fsCleanableHelper = new FsCleanableHelper(fs, properties, simulate, skipTrash, deleteEmptyDirectories, deleteAsOwner, log);
     this.fs = fs;
     this.simulate = simulate;
     this.skipTrash = skipTrash;
     this.deleteEmptyDirectories = deleteEmptyDirectories;
-    Properties thisProperties = new Properties();
-    thisProperties.putAll(properties);
-    if (this.simulate) {
-      thisProperties.setProperty(TrashFactory.SIMULATE, Boolean.toString(true));
-    }
-    if (this.skipTrash) {
-      thisProperties.setProperty(TrashFactory.SKIP_TRASH, Boolean.toString(true));
-    }
-    this.trash = TrashFactory.createProxiedTrash(this.fs, thisProperties);
+    this.trash = this.fsCleanableHelper.getTrash();
     this.deleteAsOwner = deleteAsOwner;
     this.isDatasetBlacklisted = isDatasetBlacklisted;
+
   }
 
   public MultiVersionCleanableDatasetBase(FileSystem fs, Properties properties, boolean simulate, boolean skipTrash,
@@ -182,9 +233,21 @@ public abstract class MultiVersionCleanableDatasetBase<T extends FileSystemDatas
   }
 
   /**
-   * Perform the cleanup of old / deprecated dataset versions. See {@link gobblin.data.management.retention.DatasetCleanerNew}
-   * javadoc for more information.
-   * @throws java.io.IOException
+   * Method to perform the Retention operations for this dataset.
+   *
+   *<ul>
+  * <li>{@link MultiVersionCleanableDatasetBase#getVersionFindersAndPolicies()} gets a list {@link VersionFinderAndPolicy}s
+  * <li>Each {@link VersionFinderAndPolicy} contains a {@link VersionFinder} and a {@link VersionSelectionPolicy}. It can
+  * optionally have a {@link RetentionAction}
+  * <li>The {@link MultiVersionCleanableDatasetBase#clean()} method finds all the {@link FileSystemDatasetVersion}s using
+  * {@link VersionFinderAndPolicy#versionFinder}
+  * <li> It gets the deletable {@link FileSystemDatasetVersion}s by applying {@link VersionFinderAndPolicy#versionSelectionPolicy}.
+  * These deletable version are deleted  and then deletes empty parent directories.
+  * <li>If additional retention actions are available at {@link VersionFinderAndPolicy#getRetentionActions()}, all versions
+  * found by the {@link VersionFinderAndPolicy#versionFinder} are passed to {@link RetentionAction#execute(List)} for
+  * each {@link RetentionAction}
+   * </ul>
+   *
    */
   @Override
   public void clean() throws IOException {
@@ -193,6 +256,8 @@ public abstract class MultiVersionCleanableDatasetBase<T extends FileSystemDatas
       this.log.info("Dataset blacklisted. Cleanup skipped for " + datasetRoot());
       return;
     }
+
+    boolean atLeastOneFailureSeen = false;
 
     for (VersionFinderAndPolicy<T> versionFinderAndPolicy : getVersionFindersAndPolicies()) {
 
@@ -204,7 +269,7 @@ public abstract class MultiVersionCleanableDatasetBase<T extends FileSystemDatas
       }
 
       this.log.info(String.format("Cleaning dataset %s. Using version finder %s and policy %s", this,
-          versionFinder.getClass().getName(), selectionPolicy.getClass().getName()));
+          versionFinder.getClass().getName(), selectionPolicy));
 
       List<T> versions = Lists.newArrayList(versionFinder.findDatasetVersions(this));
 
@@ -218,54 +283,30 @@ public abstract class MultiVersionCleanableDatasetBase<T extends FileSystemDatas
       Collection<T> deletableVersions = selectionPolicy.listSelectedVersions(versions);
 
       cleanImpl(deletableVersions);
+
+      List<DatasetVersion> allVersions = Lists.newArrayList();
+      for (T ver : versions) {
+        allVersions.add(ver);
+      }
+      for (RetentionAction retentionAction : versionFinderAndPolicy.getRetentionActions()) {
+        try {
+          retentionAction.execute(allVersions);
+        } catch (Throwable t) {
+          atLeastOneFailureSeen = true;
+          log.error(String.format("RetentionAction %s failed for dataset %s", retentionAction.getClass().getName(),
+                  this.datasetRoot()), t);
+        }
+      }
     }
 
+    if (atLeastOneFailureSeen) {
+      throw new RuntimeException(String.format(
+          "At least one failure happened while processing %s. Look for previous logs for failures", datasetRoot()));
+    }
   }
 
   protected void cleanImpl(Collection<T> deletableVersions) throws IOException {
-    if (deletableVersions.isEmpty()) {
-      this.log.warn("No deletable dataset version can be found. Ignoring.");
-      return;
-    }
-
-    Set<Path> possiblyEmptyDirectories = new HashSet<>();
-
-    for (FileSystemDatasetVersion versionToDelete : deletableVersions) {
-      this.log.info("Deleting dataset version " + versionToDelete);
-
-      Set<Path> pathsToDelete = versionToDelete.getPaths();
-      this.log.info("Deleting paths: " + Arrays.toString(pathsToDelete.toArray()));
-
-      boolean deletedAllPaths = true;
-
-      for (Path path : pathsToDelete) {
-
-        boolean successfullyDeleted =
-            this.deleteAsOwner ? this.trash.moveToTrashAsOwner(path) : this.trash.moveToTrash(path);
-
-        if (successfullyDeleted) {
-          possiblyEmptyDirectories.add(path.getParent());
-        } else {
-          this.log.error("Failed to delete path " + path + " in dataset version " + versionToDelete);
-          deletedAllPaths = false;
-        }
-      }
-
-      if (!deletedAllPaths) {
-        this.log.error("Failed to delete some paths in dataset version " + versionToDelete);
-      }
-
-    }
-
-    if (this.deleteEmptyDirectories) {
-      for (Path parentDirectory : possiblyEmptyDirectories) {
-        deleteEmptyParentDirectories(datasetRoot(), parentDirectory);
-      }
-    }
-  }
-
-  private void deleteEmptyParentDirectories(Path datasetRoot, Path parent) throws IOException {
-    PathUtils.deleteEmptyParentDirectories(this.fs, datasetRoot, parent);
+    this.fsCleanableHelper.clean(deletableVersions, this);
   }
 
   @Override
@@ -278,14 +319,55 @@ public abstract class MultiVersionCleanableDatasetBase<T extends FileSystemDatas
     return this.datasetRoot().toString();
   }
 
-  @AllArgsConstructor
+  /**
+   * A composition of version finder
+   * @param <T> the type of {@link FileSystemDatasetVersion} this version finder knows to find
+   */
   @Getter
+  @Builder
+  @AllArgsConstructor
   public static class VersionFinderAndPolicy<T extends FileSystemDatasetVersion> {
-    VersionSelectionPolicy<T> versionSelectionPolicy;
-    VersionFinder<? extends T> versionFinder;
 
+    private final VersionSelectionPolicy<T> versionSelectionPolicy;
+    private final VersionFinder<? extends T> versionFinder;
+    @Singular
+    private final List<RetentionAction> retentionActions;
+
+    /**
+     * Constructor for backward compatibility
+     * @deprecated use {@link VersionFinderAndPolicyBuilder}
+     */
+    @Deprecated
+    public VersionFinderAndPolicy(VersionSelectionPolicy<T> versionSelectionPolicy, VersionFinder<? extends T> versionFinder) {
+      this.versionSelectionPolicy = versionSelectionPolicy;
+      this.versionFinder = versionFinder;
+      this.retentionActions = Lists.newArrayList();
+    }
     public VersionFinderAndPolicy(RetentionPolicy<T> retentionPolicy, VersionFinder<? extends T> versionFinder) {
       this(new EmbeddedRetentionSelectionPolicy<>(retentionPolicy), versionFinder);
+    }
+
+    public static class VersionFinderAndPolicyBuilder<T extends FileSystemDatasetVersion> {
+      @SuppressWarnings("unchecked")
+      public VersionFinderAndPolicy<T> build() {
+
+        VersionSelectionPolicy<T> localVersionSelectionPolicy;
+        List<RetentionAction> localRetentionActions;
+
+        if (this.versionSelectionPolicy == null) {
+          localVersionSelectionPolicy = (VersionSelectionPolicy<T>) new SelectNothingPolicy(new Properties());
+        } else {
+          localVersionSelectionPolicy = this.versionSelectionPolicy;
+        }
+
+        if (this.retentionActions == null) {
+          localRetentionActions = Lists.newArrayList();
+        } else {
+          localRetentionActions = Lists.newArrayList(this.retentionActions);
+        }
+        return new VersionFinderAndPolicy<T>(localVersionSelectionPolicy, this.versionFinder,
+            localRetentionActions);
+      }
     }
   }
 }

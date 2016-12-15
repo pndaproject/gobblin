@@ -32,13 +32,17 @@ dependencies {
   compile project(':gobblin-metastore')
   compile project(':gobblin-metrics')
   compile project(':gobblin-example')
+  compile project(':gobblin-PNDA')
   compile project(':gobblin-data-management')
   compile project(":gobblin-rest-service:gobblin-rest-api")
   compile project(":gobblin-rest-service:gobblin-rest-client")
   compile project(":gobblin-rest-service:gobblin-rest-server")
   compile project(":gobblin-config-management:gobblin-config-client")
   compile project(":gobblin-config-management:gobblin-config-core")
+  compile project(':gobblin-cluster')
   compile project(':gobblin-yarn')
+  compile project(':gobblin-aws')
+  compile project(':gobblin-runtime-hadoop')
 }
 
 task buildDistributionTar(type: Tar, overwrite: true) {
@@ -47,10 +51,10 @@ task buildDistributionTar(type: Tar, overwrite: true) {
   compression = Compression.GZIP
 
   into("conf") { from "../conf/" }
-  into("bin") { 
-    from "../bin/" 
+  into("bin") {
+    from "../bin/"
     from project(':gobblin-utility').projectDir.path + '/src/main/bash/gobblin_password_encryptor.sh'
-    filter { String line -> line.replace("GOBBLIN_VERSION=@project.version@", 
+    filter { String line -> line.replace("GOBBLIN_VERSION=@project.version@",
       "GOBBLIN_VERSION="+'"' + project.version + '"') }
   }
   into("lib") {

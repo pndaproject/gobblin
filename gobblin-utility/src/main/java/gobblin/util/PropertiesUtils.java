@@ -12,7 +12,14 @@
 
 package gobblin.util;
 
+import java.util.Map;
 import java.util.Properties;
+
+import org.apache.commons.lang3.StringUtils;
+
+import com.google.common.base.Preconditions;
+import com.google.common.base.Optional;
+import com.google.common.collect.ImmutableMap;
 
 
 /**
@@ -29,5 +36,42 @@ public class PropertiesUtils {
       combinedProperties.putAll(props);
     }
     return combinedProperties;
+  }
+
+  /**
+   * Converts a {@link Properties} object to a {@link Map} where each key is a {@link String}.
+   */
+  public static Map<String, ?> propsToStringKeyMap(Properties properties) {
+    ImmutableMap.Builder<String, Object> mapBuilder = ImmutableMap.builder();
+    for (Map.Entry<Object, Object> entry : properties.entrySet()) {
+      mapBuilder.put(entry.getKey().toString(), entry.getValue());
+    }
+    return mapBuilder.build();
+  }
+  
+  public static boolean getPropAsBoolean(Properties properties, String key, String defaultValue) {
+    return Boolean.valueOf(properties.getProperty(key, defaultValue));
+  }
+
+  /**
+   * Extract all the keys that start with a <code>prefix</code> in {@link Properties} to a new {@link Properties}
+   * instance.
+   *
+   * @param properties the given {@link Properties} instance
+   * @param prefix of keys to be extracted
+   * @return a {@link Properties} instance
+   */
+  public static Properties extractPropertiesWithPrefix(Properties properties, Optional<String> prefix) {
+    Preconditions.checkNotNull(properties);
+    Preconditions.checkNotNull(prefix);
+
+    Properties extractedProperties = new Properties();
+    for (Map.Entry<Object, Object> entry : properties.entrySet()) {
+      if (StringUtils.startsWith(entry.getKey().toString(), prefix.or(StringUtils.EMPTY))) {
+        extractedProperties.put(entry.getKey().toString(), entry.getValue());
+      }
+    }
+
+    return extractedProperties;
   }
 }

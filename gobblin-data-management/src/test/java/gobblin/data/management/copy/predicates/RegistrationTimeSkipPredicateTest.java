@@ -19,17 +19,18 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.ql.metadata.Partition;
+import org.mockito.Mockito;
 import org.testng.Assert;
 import org.testng.annotations.Test;
-import org.mockito.Mockito;
 
-import com.beust.jcommander.internal.Maps;
 import com.google.common.base.Optional;
+import com.google.common.collect.Maps;
 
 import gobblin.data.management.copy.CopyConfiguration;
 import gobblin.data.management.copy.CopyContext;
 import gobblin.data.management.copy.hive.HiveCopyEntityHelper;
 import gobblin.data.management.copy.hive.HiveDataset;
+import gobblin.data.management.copy.hive.HivePartitionFileSet;
 
 
 public class RegistrationTimeSkipPredicateTest {
@@ -58,7 +59,7 @@ public class RegistrationTimeSkipPredicateTest {
     RegistrationTimeSkipPredicate predicate = new RegistrationTimeSkipPredicate(helper);
 
     // partition exists, but registration time before modtime => don't skip
-    HiveCopyEntityHelper.PartitionCopy pc = createPartitionCopy(partition1Path, modTime - 1, true);
+    HivePartitionFileSet pc = createPartitionCopy(partition1Path, modTime - 1, true);
     Assert.assertFalse(predicate.apply(pc));
 
     // partition exists, registration time equal modtime => don't skip
@@ -80,9 +81,9 @@ public class RegistrationTimeSkipPredicateTest {
 
   }
 
-  public HiveCopyEntityHelper.PartitionCopy createPartitionCopy(Path location, long registrationGenerationTime,
+  public HivePartitionFileSet createPartitionCopy(Path location, long registrationGenerationTime,
       boolean targetPartitionExists) {
-    HiveCopyEntityHelper.PartitionCopy partitionCopy = Mockito.mock(HiveCopyEntityHelper.PartitionCopy.class);
+    HivePartitionFileSet partitionCopy = Mockito.mock(HivePartitionFileSet.class);
 
     Partition partition = Mockito.mock(Partition.class);
     Mockito.doReturn(location).when(partition).getDataLocation();
