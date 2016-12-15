@@ -149,7 +149,15 @@ public class PNDAConverter extends Converter<String,
     Decoder binaryDecoder = DecoderFactory.get().binaryDecoder(inputRecord, null);
     try {
       GenericRecord record = reader.read(null, binaryDecoder);
-      return new SingleRecordIterable<>(record);
+
+      /* Do some basic checking on the deserialized AVRO fragment */
+      if (((org.apache.avro.util.Utf8) record.get("src")).length() == 0) {
+        writeErrorData(inputRecord, "'src' field cannot be empty");
+        return new EmptyIterable<>();
+      } else {
+        /* It looks like a valid PNDA record */
+        return new SingleRecordIterable<>(record);
+      }
     } catch (IOException | AvroRuntimeException error) {
       writeErrorData(inputRecord, "Unable to deserialize data");
       return new EmptyIterable<>();
