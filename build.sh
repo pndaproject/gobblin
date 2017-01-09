@@ -12,6 +12,8 @@
 #
 # Please check pnda-build/ for the build products
 
+set -e
+
 export LC_ALL=en_US.utf8
 HADOOP_VERSION=2.6.0-cdh5.9.0
 
