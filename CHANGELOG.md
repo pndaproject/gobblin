@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] 2017-01-20
+### Fixed
+- PNDA-2521: Exits on first build error
+
 ## [0.1.2] 2016-12-12
 ### Added
 - Basic checks on PNDA message after deserialization
@@ -13,6 +17,6 @@ All notable changes to this project will be documented in this file.
 - Enhanced CI support
 
 ## [0.1.0] 2016-07-04
-### Added 
+### Added
 * A new converter to convert messages read from Kafka to the PNDA Avro schema (gobblin.pnda.PNDAConverter)
 * A new writer writing data with the kitesdk library (gobblin.pnda.PNDAKiteWriterBuilder)
