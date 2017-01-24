@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 ## [0.1.3] 2017-01-20
 ### Fixed
 - PNDA-2521: Exits on first build error
+- PNDA-2659: Update an old MySQL unittest library in order to make the build work
 
 ## [0.1.2] 2016-12-12
 ### Added
