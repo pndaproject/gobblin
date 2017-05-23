@@ -1,9 +1,11 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## [0.1.4] 2017-05-23
 ### Changed
 - PNDA-2984: Upgrade JDK to 8u131
+### Fixed
+- Don't run tests by default
 
 ### Fixed
 - PNDA-3076: Catch all potential exceptions thrown by avro deserialisation
