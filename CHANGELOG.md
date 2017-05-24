@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+### Changed
+- PNDA-2984: Upgrade JDK to 8u131
+
 ## [0.1.3] 2017-01-20
 ### Fixed
 - PNDA-2521: Exits on first build error
