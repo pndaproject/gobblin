@@ -22,6 +22,7 @@ package gobblin.pnda;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.RuntimeException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,7 +34,6 @@ import org.apache.avro.io.Decoder;
 import org.apache.avro.io.DecoderFactory;
 import org.apache.avro.generic.GenericData.Record;
 import org.apache.avro.generic.GenericDatumReader;
-import org.apache.avro.AvroRuntimeException;
 
 import org.kitesdk.data.Dataset;
 import org.kitesdk.data.DatasetWriter;
@@ -158,9 +158,9 @@ public class PNDAConverter extends Converter<String,
         /* It looks like a valid PNDA record */
         return new SingleRecordIterable<>(record);
       }
-    } catch (IOException | AvroRuntimeException error) {
-      writeErrorData(inputRecord, "Unable to deserialize data");
-      return new EmptyIterable<>();
+    } catch(IOException | RuntimeException ex) {
+        writeErrorData(inputRecord, "Unable to deserialize data");
+        return new EmptyIterable<>();
     }
   }
 
