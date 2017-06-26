@@ -34,6 +34,10 @@ import org.apache.avro.io.DecoderFactory;
 import org.apache.avro.generic.GenericData.Record;
 import org.apache.avro.generic.GenericDatumReader;
 import org.apache.avro.AvroRuntimeException;
+import java.lang.IllegalArgumentException;
+import java.io.DataOutputStream;
+import java.io.FileOutputStream;
+import java.io.File;
 
 import org.kitesdk.data.Dataset;
 import org.kitesdk.data.DatasetWriter;
@@ -141,6 +145,18 @@ public class PNDAConverter extends Converter<String,
     return schema;
   }
 
+  final private static char[] hexArray = "0123456789ABCDEF".toCharArray();
+
+  private static String hexStr(byte[] bytes) {
+        char[] hexChars = new char[bytes.length * 2];
+        for ( int j = 0; j < bytes.length; j++ ) {
+            int v = bytes[j] & 0xFF;
+            hexChars[j * 2] = hexArray[v >>> 4];
+            hexChars[j * 2 + 1] = hexArray[v & 0x0F];
+        }
+        return new String(hexChars);
+    }
+
   @Override
   public Iterable<GenericRecord> convertRecord(Schema schema, byte[] inputRecord,
                                                WorkUnitState workUnit)
@@ -158,7 +174,44 @@ public class PNDAConverter extends Converter<String,
         /* It looks like a valid PNDA record */
         return new SingleRecordIterable<>(record);
       }
-    } catch (IOException | AvroRuntimeException error) {
+    } 
+    catch (IllegalArgumentException error) {
+      log.error("it went wrong 1");
+      log.error(hexStr(inputRecord));
+      File f = new File("/tmp/type1.dat");
+      if (!f.exists()) {
+        try {
+          DataOutputStream os = new DataOutputStream(new FileOutputStream("/tmp/type1.dat"));
+          os.write(inputRecord, 0 , inputRecord.length);
+          os.close();
+        }
+        catch (RuntimeException e) {
+          throw e;
+        }
+        catch(Exception ex) {
+          log.error("Failed to write debug file");
+        }
+      }
+      writeErrorData(inputRecord, "Unable to deserialize data");
+      return new EmptyIterable<>();
+    }
+    catch (IOException | AvroRuntimeException error) {
+      log.error("it went wrong 2");
+      log.error(hexStr(inputRecord));
+      File f = new File("/tmp/type2.dat");
+      if (!f.exists()) {
+        try {
+          DataOutputStream os = new DataOutputStream(new FileOutputStream("/tmp/type2.dat"));
+          os.write(inputRecord, 0 , inputRecord.length);
+          os.close();
+        }
+        catch (RuntimeException e) {
+          throw e;
+        }
+        catch(Exception ex) {
+          log.error("Failed to write debug file");
+        }
+      }
       writeErrorData(inputRecord, "Unable to deserialize data");
       return new EmptyIterable<>();
     }
