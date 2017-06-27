@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - PNDA-2984: Upgrade JDK to 8u131
 
+### Fixed
+- PNDA-3076: Catch all potential exceptions thrown by avro deserialisation
+
 ## [0.1.3] 2017-01-20
 ### Fixed
 - PNDA-2521: Exits on first build error
