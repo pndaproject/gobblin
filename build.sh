@@ -12,7 +12,14 @@
 #
 # Please check pnda-build/ for the build products
 
+
+# The Gobblin tests are very thorough, resource intensive and are likely to fail
+# on unsuitable build platforms. Since we're typically building to a known-good label
+# default the execution of these tests to 'off'. Developers should renable.
+EXCLUDES="-x test"
+
 set -e
+set -x
 
 export LC_ALL=en_US.utf8
 HADOOP_VERSION=2.6.0-cdh5.9.0
@@ -25,14 +32,14 @@ function error {
     exit -1
 }
 
-echo -n "Java 1.8.0_74: "
-if [[ $($JAVA_HOME/bin/javac -version 2>&1) != "javac 1.8.0_74" ]]; then
+echo -n "Java 1.8.0_131: "
+if [[ $($JAVA_HOME/bin/javac -version 2>&1) != "javac 1.8.0_131" ]]; then
     error
 else
     echo "OK"
 fi
 
 mkdir -p pnda-build
-./gradlew clean build -Pversion="${VERSION}" -PhadoopVersion="${HADOOP_VERSION}" -PexcludeHadoopDeps -PexcludeHiveDeps -x gobblin-core:test -x gobblin-data-management:test
+./gradlew clean build -Pversion="${VERSION}" -PhadoopVersion="${HADOOP_VERSION}" -PexcludeHadoopDeps -PexcludeHiveDeps ${EXCLUDES}
 mv gobblin-distribution-${VERSION}.tar.gz pnda-build/
 sha512sum pnda-build/gobblin-distribution-${VERSION}.tar.gz > pnda-build/gobblin-distribution-${VERSION}.tar.gz.sha512.txt
