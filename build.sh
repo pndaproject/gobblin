@@ -32,8 +32,8 @@ function error {
     exit -1
 }
 
-echo -n "Java 1.8.0_131: "
-if [[ $($JAVA_HOME/bin/javac -version 2>&1) != "javac 1.8.0_131" ]]; then
+echo -n "Java 1.8: "
+if [[ $($JAVA_HOME/bin/javac -version 2>&1) != "javac 1.8"* ]]; then
     error
 else
     echo "OK"
