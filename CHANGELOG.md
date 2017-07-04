@@ -1,6 +1,10 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [0.1.5] 2017-07-04
+### Changed
+- PNDA-3103: Accept any JDK1.8 to build
+
 ## [0.1.4] 2017-05-23
 ### Changed
 - PNDA-2984: Upgrade JDK to 8u131
