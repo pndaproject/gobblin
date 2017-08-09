@@ -73,7 +73,7 @@ public class JdbcWriter implements DataWriter<JdbcEntryData> {
 
   public JdbcWriter(JdbcWriterBuilder builder) {
     this.state = builder.destination.getProperties();
-    this.state.appendToListProp(ConfigurationKeys.FORK_BRANCH_ID_KEY, Integer.toString(builder.branch));
+    this.state.setProp(ConfigurationKeys.FORK_BRANCH_ID_KEY, Integer.toString(builder.branch));
 
     String databaseTableKey = ForkOperatorUtils.getPropertyNameForBranch(JdbcPublisher.JDBC_PUBLISHER_DATABASE_NAME,
         builder.branches, builder.branch);
@@ -87,7 +87,7 @@ public class JdbcWriter implements DataWriter<JdbcEntryData> {
     try {
       this.conn = createConnection();
       this.commands = new JdbcWriterCommandsFactory().newInstance(this.state, this.conn);
-      this.conn.setAutoCommit(false);
+      this.commands.setConnectionParameters(this.state.getProperties(), this.conn);
     } catch (SQLException e) {
       throw new RuntimeException(e);
     }

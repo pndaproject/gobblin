@@ -33,13 +33,13 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import com.google.gson.stream.JsonWriter;
-
 import com.linkedin.data.template.StringMap;
 
 import gobblin.configuration.ConfigurationKeys;
 import gobblin.configuration.SourceState;
 import gobblin.configuration.State;
 import gobblin.configuration.WorkUnitState;
+import gobblin.metrics.GobblinMetrics;
 import gobblin.rest.JobExecutionInfo;
 import gobblin.rest.JobStateEnum;
 import gobblin.rest.LauncherTypeEnum;
@@ -47,9 +47,10 @@ import gobblin.rest.Metric;
 import gobblin.rest.MetricArray;
 import gobblin.rest.MetricTypeEnum;
 import gobblin.rest.TaskExecutionInfoArray;
-import gobblin.metrics.GobblinMetrics;
 import gobblin.runtime.util.JobMetrics;
 import gobblin.runtime.util.MetricGroup;
+import gobblin.source.extractor.JobCommitPolicy;
+import gobblin.source.workunit.WorkUnit;
 
 
 /**
@@ -63,14 +64,54 @@ public class JobState extends SourceState {
    * An enumeration of possible job states, which are identical to
    * {@link gobblin.configuration.WorkUnitState.WorkingState}
    * in terms of naming.
+   *
+   * <p> Status state diagram:
+   * <ul>
+   *    <li> null => PENDING
+   *    <li> PENDING => RUNNING
+   *    <li> PENDING => CANCELLED
+   *    <li> RUNNING => CANCELLED
+   *    <li> RUNNING => SUCCESSFUL
+   *    <li> RUNNING => FAILED
+   *    <li> SUCCESSFUL => COMMITTED
+   *    <li> SUCCESSFUL => CANCELLED  (cancelled before committing)
+   * </ul>
    */
   public enum RunningState {
+    /** Pending creation of {@link WorkUnit}s. */
     PENDING,
+    /** Starting the execution of {@link WorkUnit}s. */
     RUNNING,
+    /** All {@link WorkUnit}s have finished successfully or the job commit policy is
+     * {@link JobCommitPolicy#COMMIT_ON_PARTIAL_SUCCESS} */
     SUCCESSFUL,
+    /** Job state has been committed */
     COMMITTED,
+    /** At least one {@link WorkUnit}s has failed for a job with job commit policy
+     *  {@link JobCommitPolicy#COMMIT_ON_FULL_SUCCESS}. */
     FAILED,
-    CANCELLED
+    /** The execution of the job was cancelled. */
+    CANCELLED;
+
+    public boolean isCancelled() {
+      return this.equals(CANCELLED);
+    }
+
+    public boolean isDone() {
+      return this.equals(COMMITTED) || this.equals(FAILED) || this.equals(CANCELLED);
+    }
+
+    public boolean isSuccess() {
+      return this.equals(COMMITTED);
+    }
+
+    public boolean isFailure() {
+      return this.equals(FAILED);
+    }
+
+    public boolean isRunningOrDone() {
+      return isDone() || this.equals(RUNNING);
+    }
   }
 
   private String jobName;
@@ -97,6 +138,30 @@ public class JobState extends SourceState {
     this.jobName = jobName;
     this.jobId = jobId;
     this.setId(jobId);
+  }
+
+  public static String getJobNameFromState(State state) {
+    return state.getProp(ConfigurationKeys.JOB_NAME_KEY);
+  }
+
+  public static String getJobNameFromProps(Properties props) {
+    return props.getProperty(ConfigurationKeys.JOB_NAME_KEY);
+  }
+
+  public static String getJobGroupFromState(State state) {
+    return state.getProp(ConfigurationKeys.JOB_GROUP_KEY);
+  }
+
+  public static String getJobGroupFromProps(Properties props) {
+    return props.getProperty(ConfigurationKeys.JOB_GROUP_KEY);
+  }
+
+  public static String getJobDescriptionFromProps(State state) {
+    return state.getProp(ConfigurationKeys.JOB_DESCRIPTION_KEY);
+  }
+
+  public static String getJobDescriptionFromProps(Properties props) {
+    return props.getProperty(ConfigurationKeys.JOB_DESCRIPTION_KEY);
   }
 
   /**
@@ -352,9 +417,9 @@ public class JobState extends SourceState {
   public void readFields(DataInput in) throws IOException {
     Text text = new Text();
     text.readFields(in);
-    this.jobName = text.toString();
+    this.jobName = text.toString().intern();
     text.readFields(in);
-    this.jobId = text.toString();
+    this.jobId = text.toString().intern();
     this.setId(this.jobId);
     this.startTime = in.readLong();
     this.endTime = in.readLong();
@@ -366,7 +431,7 @@ public class JobState extends SourceState {
     for (int i = 0; i < numTaskStates; i++) {
       TaskState taskState = new TaskState();
       taskState.readFields(in);
-      this.taskStates.put(taskState.getTaskId(), taskState);
+      this.taskStates.put(taskState.getTaskId().intern(), taskState);
     }
     super.readFields(in);
   }
@@ -424,13 +489,17 @@ public class JobState extends SourceState {
 
     if (keepConfig) {
       jsonWriter.name("properties");
-      jsonWriter.beginObject();
-      for (String key : this.getPropertyNames()) {
-        jsonWriter.name(key).value(this.getProp(key));
-      }
-      jsonWriter.endObject();
+      propsToJson(jsonWriter);
     }
 
+    jsonWriter.endObject();
+  }
+
+  protected void propsToJson(JsonWriter jsonWriter) throws IOException {
+    jsonWriter.beginObject();
+    for (String key : this.getPropertyNames()) {
+      jsonWriter.name(key).value(this.getProp(key));
+    }
     jsonWriter.endObject();
   }
 
@@ -610,6 +679,14 @@ public class JobState extends SourceState {
 
     public int getJobFailures() {
       return Integer.parseInt(super.getProp(ConfigurationKeys.JOB_FAILURES_KEY));
+    }
+
+    @Override
+    protected void propsToJson(JsonWriter jsonWriter) throws IOException {
+      jsonWriter.beginObject();
+      jsonWriter.name(ConfigurationKeys.DATASET_URN_KEY).value(getDatasetUrn());
+      jsonWriter.name(ConfigurationKeys.JOB_FAILURES_KEY).value(getJobFailures());
+      jsonWriter.endObject();
     }
 
     @Override

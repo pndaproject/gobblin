@@ -38,11 +38,12 @@ import com.google.common.collect.Lists;
 import com.google.common.io.Closer;
 
 import gobblin.Constructs;
-import gobblin.metrics.GobblinMetrics;
-import gobblin.metrics.GobblinMetricsRegistry;
+import gobblin.configuration.ConfigurationKeys;
 import gobblin.configuration.State;
 import gobblin.converter.Converter;
 import gobblin.fork.ForkOperator;
+import gobblin.metrics.GobblinMetrics;
+import gobblin.metrics.GobblinMetricsRegistry;
 import gobblin.metrics.MetricContext;
 import gobblin.metrics.Tag;
 import gobblin.qualitychecker.row.RowLevelPolicy;
@@ -71,7 +72,7 @@ import gobblin.writer.DataWriter;
  */
 public class Instrumented implements Instrumentable, Closeable {
 
-  public static final String METRIC_CONTEXT_NAME_KEY = "metrics.context.name";
+  public static final String METRIC_CONTEXT_NAME_KEY = ConfigurationKeys.METRIC_CONTEXT_NAME_KEY;
   public static final Random RAND = new Random();
 
   private final boolean instrumentationEnabled;
@@ -111,6 +112,7 @@ public class Instrumented implements Instrumentable, Closeable {
   public static MetricContext getMetricContext(State state, Class<?> klazz, List<Tag<?>> tags) {
     int randomId = RAND.nextInt(Integer.MAX_VALUE);
 
+    List<Tag<?>> generatedTags = Lists.newArrayList();
     Constructs construct = null;
     if (Converter.class.isAssignableFrom(klazz)) {
       construct = Constructs.CONVERTER;
@@ -124,12 +126,11 @@ public class Instrumented implements Instrumentable, Closeable {
       construct = Constructs.WRITER;
     }
 
-    List<Tag<?>> generatedTags = Lists.newArrayList();
     if (construct != null) {
-      generatedTags.add(new Tag<>("construct", construct.toString()));
+      generatedTags.add(new Tag<>(GobblinMetricsKeys.CONSTRUCT_META, construct.toString()));
     }
     if (!klazz.isAnonymousClass()) {
-      generatedTags.add(new Tag<>("class", klazz.getCanonicalName()));
+      generatedTags.add(new Tag<>(GobblinMetricsKeys.CLASS_META, klazz.getCanonicalName()));
     }
 
     Optional<GobblinMetrics> gobblinMetrics = state.contains(METRIC_CONTEXT_NAME_KEY)

@@ -21,8 +21,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
+import org.apache.avro.AvroRuntimeException;
 import org.apache.avro.Schema;
 import org.apache.avro.Schema.Field;
 import org.apache.avro.Schema.Type;
@@ -35,14 +37,18 @@ import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.io.BinaryDecoder;
 import org.apache.avro.io.DatumReader;
 import org.apache.avro.io.DatumWriter;
+import org.apache.avro.io.Decoder;
 import org.apache.avro.io.DecoderFactory;
 import org.apache.avro.io.Encoder;
 import org.apache.avro.io.EncoderFactory;
 import org.apache.avro.mapred.FsInput;
+import org.apache.avro.util.Utf8;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.permission.FsAction;
+import org.apache.hadoop.fs.permission.FsPermission;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -93,19 +99,31 @@ public class AvroUtils {
 
   /**
    * Helper method that does the actual work for {@link #getFieldSchema(Schema, String)}
-   * @param schema passed from {@link #getFieldValue(Schema, String)}
-   * @param pathList passed from {@link #getFieldValue(Schema, String)}
+   * @param schema passed from {@link #getFieldSchema(Schema, String)}
+   * @param pathList passed from {@link #getFieldSchema(Schema, String)}
    * @param field keeps track of the index used to access the list pathList
    * @return the schema of the field
    */
   private static Optional<Schema> getFieldSchemaHelper(Schema schema, List<String> pathList, int field) {
-    if (schema.getField(pathList.get(field)) == null) {
+    if (schema.getType() == Type.RECORD && schema.getField(pathList.get(field)) == null) {
       return Optional.absent();
     }
-    if ((field + 1) == pathList.size()) {
-      return Optional.fromNullable(schema.getField(pathList.get(field)).schema());
+    switch (schema.getType()) {
+      case UNION:
+        throw new AvroRuntimeException("Union of complex types cannot be handled : " + schema);
+      case MAP:
+        if ((field + 1) == pathList.size()) {
+          return Optional.fromNullable(schema.getValueType());
+        }
+        return AvroUtils.getFieldSchemaHelper(schema.getValueType(), pathList, ++field);
+      case RECORD:
+        if ((field + 1) == pathList.size()) {
+          return Optional.fromNullable(schema.getField(pathList.get(field)).schema());
+        }
+        return AvroUtils.getFieldSchemaHelper(schema.getField(pathList.get(field)).schema(), pathList, ++field);
+      default:
+        throw new AvroRuntimeException("Invalid type in schema : " + schema);
     }
-    return AvroUtils.getFieldSchemaHelper(schema.getField(pathList.get(field)).schema(), pathList, ++field);
   }
 
   /**
@@ -143,9 +161,28 @@ public class AvroUtils {
     }
 
     if ((field + 1) == pathList.size()) {
+      if (data instanceof Map) {
+        return Optional.fromNullable(getObjectFromMap((Map) data, pathList.get(field)));
+      }
       return Optional.fromNullable(((Record) data).get(pathList.get(field)));
     }
+    if (data instanceof Map) {
+      return AvroUtils.getFieldHelper(getObjectFromMap((Map) data, pathList.get(field)), pathList, ++field);
+    }
     return AvroUtils.getFieldHelper(((Record) data).get(pathList.get(field)), pathList, ++field);
+  }
+
+  /**
+   * This method is to get object from map given a key as string.
+   * Avro persists string as Utf8
+   * @param map passed from {@link #getFieldHelper(Object, List, int)}
+   * @param key passed from {@link #getFieldHelper(Object, List, int)}
+   * @return This could again be a GenericRecord
+   */
+
+  private static Object getObjectFromMap(Map map, String key) {
+    Utf8 utf8Key = new Utf8(key);
+    return map.get(utf8Key);
   }
 
   /**
@@ -212,6 +249,11 @@ public class AvroUtils {
 
   public static void writeSchemaToFile(Schema schema, Path filePath, FileSystem fs, boolean overwrite)
       throws IOException {
+    writeSchemaToFile(schema, filePath, fs, overwrite, new FsPermission(FsAction.ALL, FsAction.ALL, FsAction.READ));
+  }
+
+  public static void writeSchemaToFile(Schema schema, Path filePath, FileSystem fs, boolean overwrite, FsPermission perm)
+    throws IOException {
     if (!overwrite) {
       Preconditions.checkState(!fs.exists(filePath), filePath + " already exists");
     } else {
@@ -221,6 +263,7 @@ public class AvroUtils {
     try (DataOutputStream dos = fs.create(filePath)) {
       dos.writeChars(schema.toString());
     }
+    fs.setPermission(filePath, perm);
   }
 
   /**
@@ -467,5 +510,14 @@ public class AvroUtils {
       }
     }
     return new Path(Joiner.on(Path.SEPARATOR).join(tokens));
+  }
+
+  /**
+   * Deserialize a {@link GenericRecord} from a byte array. This method is not intended for high performance.
+   */
+  public static GenericRecord slowDeserializeGenericRecord(byte[] serializedRecord, Schema schema) throws IOException {
+    Decoder decoder = DecoderFactory.get().binaryDecoder(serializedRecord, null);
+    GenericDatumReader<GenericRecord> reader = new GenericDatumReader<>(schema);
+    return reader.read(null, decoder);
   }
 }

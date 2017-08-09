@@ -1,3 +1,4 @@
+
 /*
  * Copyright (C) 2014-2016 LinkedIn Corp. All rights reserved.
  *
@@ -16,16 +17,17 @@ import java.io.File;
 import java.util.List;
 import java.util.Properties;
 
-import com.google.common.base.Optional;
-import com.google.common.eventbus.EventBus;
-import com.google.common.util.concurrent.AbstractIdleService;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.base.Optional;
+import com.google.common.eventbus.EventBus;
+import com.google.common.util.concurrent.AbstractIdleService;
+import com.typesafe.config.Config;
+
 import gobblin.annotation.Alpha;
-import gobblin.configuration.ConfigurationKeys;
 import gobblin.cluster.event.NewJobConfigArrivalEvent;
+import gobblin.configuration.ConfigurationKeys;
 import gobblin.util.SchedulerUtils;
 
 
@@ -51,12 +53,17 @@ public class JobConfigurationManager extends AbstractIdleService {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(JobConfigurationManager.class);
 
-  private final EventBus eventBus;
-  private final Optional<String> jobConfDirPath;
+  protected final EventBus eventBus;
+  protected final Config config;
+  protected Optional<String> jobConfDirPath;
 
-  public JobConfigurationManager(EventBus eventBus, Optional<String> jobConfDirPath) {
+  public JobConfigurationManager(EventBus eventBus, Config config) {
     this.eventBus = eventBus;
-    this.jobConfDirPath = jobConfDirPath;
+    this.config = config;
+
+    this.jobConfDirPath =
+        config.hasPath(GobblinClusterConfigurationKeys.JOB_CONF_PATH_KEY) ? Optional
+            .of(config.getString(GobblinClusterConfigurationKeys.JOB_CONF_PATH_KEY)) : Optional.<String>absent();
   }
 
   @Override
@@ -69,8 +76,8 @@ public class JobConfigurationManager extends AbstractIdleService {
       if (jobConfigDir.exists()) {
         LOGGER.info("Loading job configurations from " + jobConfigDir);
         Properties properties = new Properties();
-        properties.setProperty(ConfigurationKeys.JOB_CONFIG_FILE_DIR_KEY, jobConfigDir.getAbsolutePath());
-        List<Properties> jobConfigs = SchedulerUtils.loadJobConfigs(properties);
+        properties.setProperty(ConfigurationKeys.JOB_CONFIG_FILE_GENERAL_PATH_KEY, "file://" + jobConfigDir.getAbsolutePath());
+        List<Properties> jobConfigs = SchedulerUtils.loadGenericJobConfigs(properties);
         LOGGER.info("Loaded " + jobConfigs.size() + " job configuration(s)");
         for (Properties config : jobConfigs) {
           postNewJobConfigArrival(config.getProperty(ConfigurationKeys.JOB_NAME_KEY), config);
@@ -86,7 +93,7 @@ public class JobConfigurationManager extends AbstractIdleService {
     // Nothing to do
   }
 
-  private void postNewJobConfigArrival(String jobName, Properties jobConfig) {
+  protected void postNewJobConfigArrival(String jobName, Properties jobConfig) {
     this.eventBus.post(new NewJobConfigArrivalEvent(jobName, jobConfig));
   }
 }

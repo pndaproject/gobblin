@@ -21,6 +21,8 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
+import com.google.common.io.Files;
+
 import gobblin.util.PathUtils;
 import gobblin.util.test.RetentionTestDataGenerator;
 import gobblin.util.test.RetentionTestHelper;
@@ -57,13 +59,13 @@ public class RetentionIntegrationTest {
   private FileSystem fs;
   private Path testClassTempPath;
   private static final String SETUP_VALIDATE_CONFIG_CLASSPATH_FILENAME = "setup_validate.conf";
-  private static final String TEST_PACKAGE_RESOURCE_NAME = "retentionIntegrationTest";
+  static final String TEST_PACKAGE_RESOURCE_NAME = "retentionIntegrationTest";
   private static final String TEST_DATA_DIR_NAME = "retentionIntegrationTestData";
 
   @BeforeClass
   public void setupClass() throws Exception {
     this.fs = FileSystem.get(new Configuration());
-    testClassTempPath = new Path(RetentionIntegrationTest.class.getClassLoader().getResource("").getFile(), TEST_DATA_DIR_NAME);
+    testClassTempPath = new Path(Files.createTempDir().getAbsolutePath(), TEST_DATA_DIR_NAME);
     if (!fs.mkdirs(testClassTempPath)) {
       throw new RuntimeException("Failed to create temp directory for the test at " + testClassTempPath.toString());
     }
@@ -78,6 +80,7 @@ public class RetentionIntegrationTest {
    */
   @DataProvider
   public Object[][] retentionTestDataProvider() {
+
     return new Object[][] {
         { "testTimeBasedRetention", "retention.conf" },
         { "testTimeBasedRetention", "selection.conf" },
@@ -87,7 +90,9 @@ public class RetentionIntegrationTest {
         { "testDailyPatternRetention", "daily-retention.job" },
         { "testMultiVersionRetention", "daily-hourly-retention.conf" },
         { "testCombinePolicy", "retention.job" },
-        { "testCombinePolicy", "selection.conf" }
+        { "testCombinePolicy", "selection.conf" },
+        { "testTimeBasedAccessControl", "selection.conf" },
+        { "testMultiVersionAccessControl", "daily-retention-with-accessControl.conf" }
     };
   }
 
@@ -99,12 +104,16 @@ public class RetentionIntegrationTest {
     RetentionTestDataGenerator dataGenerator = new RetentionTestDataGenerator(testNameTempPath,
         PathUtils.combinePaths(TEST_PACKAGE_RESOURCE_NAME, testName, SETUP_VALIDATE_CONFIG_CLASSPATH_FILENAME), fs);
 
-    dataGenerator.setup();
+    try {
+      dataGenerator.setup();
 
-    RetentionTestHelper.clean(fs, PathUtils.combinePaths(TEST_PACKAGE_RESOURCE_NAME, testName, testConfFileName), testNameTempPath);
+      RetentionTestHelper.clean(fs, PathUtils.combinePaths(TEST_PACKAGE_RESOURCE_NAME, testName, testConfFileName), testNameTempPath);
 
-    dataGenerator.validate();
+      dataGenerator.validate();
 
+    } finally {
+      dataGenerator.cleanup();
+    }
   }
 
   @AfterClass

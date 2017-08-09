@@ -84,7 +84,7 @@ public class CopyableFile extends CopyEntity implements File {
   @lombok.Builder(builderClassName = "Builder", builderMethodName = "_hiddenBuilder")
   public CopyableFile(FileStatus origin, Path destination, OwnerAndPermission destinationOwnerAndPermission,
       List<OwnerAndPermission> ancestorsOwnerAndPermission, byte[] checksum, PreserveAttributes preserve,
-      String fileSet, long originTimestamp, long upstreamTimestamp, Map<String, Object> additionalMetadata) {
+      String fileSet, long originTimestamp, long upstreamTimestamp, Map<String, String> additionalMetadata) {
     super(fileSet, additionalMetadata);
     this.origin = origin;
     this.destination = destination;
@@ -139,7 +139,7 @@ public class CopyableFile extends CopyEntity implements File {
 
     private CopyConfiguration configuration;
     private FileSystem originFs;
-    private Map<String, Object> additionalMetadata;
+    private Map<String, String> additionalMetadata;
 
     private Builder originFS(FileSystem originFs) {
       this.originFs = originFs;
@@ -259,7 +259,7 @@ public class CopyableFile extends CopyEntity implements File {
     Optional<FileStatus> originFileStatus = copyConfiguration.getCopyContext().getFileStatus(fs, path);
 
     if (!originFileStatus.isPresent()) {
-      throw new IOException(String.format("Origin path %s does not exist.", originFileStatus));
+      throw new IOException(String.format("Origin path %s does not exist.", path));
     }
 
     String group = null;

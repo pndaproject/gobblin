@@ -19,6 +19,7 @@ import java.util.List;
 
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.permission.FsPermission;
 import org.joda.time.DateTimeUtils;
 import org.joda.time.DateTimeUtils.MillisProvider;
 import org.joda.time.DateTimeZone;
@@ -87,9 +88,11 @@ public class RetentionTestDataGenerator {
   private static final String TEST_DATA_CREATE_KEY = DATA_GENERATOR_PREFIX + "create";
   private static final String TEST_DATA_VALIDATE_RETAINED_KEY = DATA_GENERATOR_PREFIX + "validate.retained";
   private static final String TEST_DATA_VALIDATE_DELETED_KEY = DATA_GENERATOR_PREFIX + "validate.deleted";
+  private static final String TEST_DATA_VALIDATE_PERMISSIONS_KEY = DATA_GENERATOR_PREFIX + "validate.permissions";
 
   private static final String TEST_DATA_PATH_LOCAL_KEY = "path";
   private static final String TEST_DATA_MOD_TIME_LOCAL_KEY = "modTime";
+  private static final String TEST_DATA_PERMISSIONS_KEY = "permission";
 
   private static final DateTimeFormatter FORMATTER = DateTimeFormat.
       forPattern("MM/dd/yyyy HH:mm:ss").withZone(DateTimeZone.forID(ConfigurationKeys.PST_TIMEZONE_NAME));
@@ -147,6 +150,9 @@ public class RetentionTestDataGenerator {
           throw new IOException(String.format("Unable to set the last modified time for file %s!", file));
         }
       }
+      if (fileToCreate.hasPath(TEST_DATA_PERMISSIONS_KEY)) {
+        this.fs.setPermission(fullFilePath, new FsPermission(fileToCreate.getString(TEST_DATA_PERMISSIONS_KEY)));
+      }
     }
   }
 
@@ -173,10 +179,24 @@ public class RetentionTestDataGenerator {
       Assert.assertFalse(this.fs.exists(fullFilePath), String.format("%s should be deleted", fullFilePath.toString()));
     }
 
+    // Validate permissions
+    if (setupConfig.hasPath(TEST_DATA_VALIDATE_PERMISSIONS_KEY)) {
+      List<? extends Config> permissionsConfigs = setupConfig.getConfigList(TEST_DATA_VALIDATE_PERMISSIONS_KEY);
+      for (Config permissionsConfig : permissionsConfigs) {
+        Path fullFilePath =
+            new Path(testTempDirPath, PathUtils.withoutLeadingSeparator(new Path(permissionsConfig
+                .getString(TEST_DATA_PATH_LOCAL_KEY))));
+        Assert.assertEquals(this.fs.getFileStatus(fullFilePath).getPermission(),
+            new FsPermission(permissionsConfig.getString(TEST_DATA_PERMISSIONS_KEY)),
+            String.format("Permissions check failed for %s", fullFilePath));
+      }
+    }
+
     this.cleanup();
   }
 
   public void cleanup() throws IOException {
+    DateTimeUtils.setCurrentMillisSystem();
     if (this.fs.exists(testTempDirPath)) {
       if (!this.fs.delete(testTempDirPath, true)) {
         throw new IOException("Failed to clean up path " + this.testTempDirPath);

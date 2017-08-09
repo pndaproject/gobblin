@@ -16,6 +16,7 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.Reader;
 import java.nio.file.Files;
 import java.util.Properties;
 import java.util.Set;
@@ -25,7 +26,6 @@ import java.util.concurrent.TimeoutException;
 import org.apache.commons.io.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -61,34 +61,41 @@ public class JobConfigFileMonitorTest {
     public Integer apply(Void input) {
       return JobConfigFileMonitorTest.this.jobScheduler.getScheduledJobs().size();
     }
-
   }
 
   @BeforeClass
-  public void setUp()
-      throws Exception {
-    this.jobConfigDir = Files.createTempDirectory(
-            String.format("gobblin-test_%s_job-conf", this.getClass().getSimpleName())).toString();
+  public void setUp() throws Exception {
+    this.jobConfigDir =
+        Files.createTempDirectory(String.format("gobblin-test_%s_job-conf", this.getClass().getSimpleName()))
+            .toString();
+
     FileUtils.forceDeleteOnExit(new File(this.jobConfigDir));
     FileUtils.copyDirectory(new File(JOB_CONFIG_FILE_DIR), new File(jobConfigDir));
 
     Properties properties = new Properties();
-    properties.load(new FileReader("gobblin-test/resource/gobblin.test.properties"));
+    try (Reader schedulerPropsReader = new FileReader("gobblin-test/resource/gobblin.test.properties")) {
+      properties.load(schedulerPropsReader);
+    }
     properties.setProperty(ConfigurationKeys.JOB_CONFIG_FILE_DIR_KEY, jobConfigDir);
+    properties.setProperty(ConfigurationKeys.JOB_CONFIG_FILE_GENERAL_PATH_KEY, jobConfigDir);
     properties.setProperty(ConfigurationKeys.JOB_CONFIG_FILE_MONITOR_POLLING_INTERVAL_KEY, "1000");
     properties.setProperty(ConfigurationKeys.METRICS_ENABLED_KEY, "false");
 
-    this.jobScheduler = new JobScheduler(properties);
-    this.serviceManager = new ServiceManager(Lists.newArrayList(this.jobScheduler));
+    SchedulerService quartzService = new SchedulerService(new Properties());
+    this.jobScheduler = new JobScheduler(properties, quartzService);
+    this.serviceManager = new ServiceManager(Lists.newArrayList(quartzService, this.jobScheduler));
     this.serviceManager.startAsync();
   }
 
   @Test
-  public void testAddNewJobConfigFile()
-      throws Exception {
+  public void testAddNewJobConfigFile() throws Exception {
     final Logger log = LoggerFactory.getLogger("testAddNewJobConfigFile");
-    AssertWithBackoff assertWithBackoff = AssertWithBackoff.create().logger(log).timeoutMs(7500);
+    AssertWithBackoff assertWithBackoff = AssertWithBackoff.create().logger(log).timeoutMs(15000);
     assertWithBackoff.assertEquals(new GetNumScheduledJobs(), 3, "3 scheduled jobs");
+
+    /* Set a time gap, to let the monitor recognize the "3-file" status as old status,
+    so that new added file can be discovered */
+    Thread.sleep(1000);
 
     // Create a new job configuration file by making a copy of an existing
     // one and giving a different job name
@@ -121,7 +128,9 @@ public class JobConfigFileMonitorTest {
     jobProps.setProperty(ConfigurationKeys.JOB_COMMIT_POLICY_KEY, "partial");
     jobProps.store(new FileWriter(this.newJobConfigFile), null);
 
-    AssertWithBackoff.create().logger(log).timeoutMs(7500)
+    AssertWithBackoff.create()
+        .logger(log)
+        .timeoutMs(7500)
         .assertEquals(new GetNumScheduledJobs(), 4, "4 scheduled jobs");
 
     Set<String> jobNames = Sets.newHashSet(this.jobScheduler.getScheduledJobs());
@@ -145,8 +154,9 @@ public class JobConfigFileMonitorTest {
     jobProps.setProperty(ConfigurationKeys.JOB_DISABLED_KEY, "true");
     jobProps.store(new FileWriter(this.newJobConfigFile), null);
 
-
-    AssertWithBackoff.create().logger(log).timeoutMs(7500)
+    AssertWithBackoff.create()
+        .logger(log)
+        .timeoutMs(7500)
         .assertEquals(new GetNumScheduledJobs(), 3, "3 scheduled jobs");
 
     Set<String> jobNames = Sets.newHashSet(this.jobScheduler.getScheduledJobs());
@@ -162,6 +172,6 @@ public class JobConfigFileMonitorTest {
     if (jobConfigDir != null) {
       FileUtils.forceDelete(new File(jobConfigDir));
     }
-    this.serviceManager.stopAsync().awaitStopped(5, TimeUnit.SECONDS);
+    this.serviceManager.stopAsync().awaitStopped(8, TimeUnit.SECONDS);
   }
 }
