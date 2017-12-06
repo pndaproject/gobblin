@@ -39,6 +39,17 @@ else
     echo "OK"
 fi
 
+# The javadoc generation isn't able to take the proxy setting into consideration,
+# so we disable the generation in all submodules for now.
+if ! fgrep -q 'tasks.withType(Javadoc).all { enabled = false }' build.gradle; then
+cat >> build.gradle << EOF
+
+subprojects {
+  tasks.withType(Javadoc).all { enabled = false }
+}
+EOF
+fi
+
 mkdir -p pnda-build
 ./gradlew clean build -Pversion="${VERSION}" -PhadoopVersion="${HADOOP_VERSION}" -PexcludeHadoopDeps -PexcludeHiveDeps ${EXCLUDES}
 mv gobblin-distribution-${VERSION}.tar.gz pnda-build/

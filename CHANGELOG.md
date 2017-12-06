@@ -1,6 +1,14 @@
 # Change Log
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+## [0.1.6] 2017-11-24
+### Changed
+- PNDA-3304: Remove javadoc generation in all subprojects.
+### Fixed
+- PNDA-3499: Cleanup CHANGELOG with missing release info.
+
 ## [0.1.5] 2017-07-04
 ### Changed
 - PNDA-3103: Accept any JDK1.8 to build
